@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 from PIL import Image, ImageTk
 import cv2
 import numpy as np
@@ -36,11 +36,80 @@ class ImageApp:
 
         tk.Button(self.button_frame, text="Load Image", command=self.load_image).pack(side="left", padx=5)
 
+        tk.Label(self.button_frame, text="Blur Type").pack(side="left", padx=(10,2))
+
+        self.blur_type = tk.StringVar(value="Motion Blur")
+
+        self.blur_menu = ttk.Combobox(
+            self.button_frame,
+            textvariable=self.blur_type,
+            values=["Motion Blur", "Out of Focus"],
+            state="readonly",
+            width=15
+        )
+
+        self.blur_menu.pack(side="left", padx=5)
+        self.blur_menu.bind("<<ComboboxSelected>>", self.update_controls)
+
         tk.Button(self.button_frame, text="Deblur Image", command=self.deblur_image).pack(side="left", padx=5)
 
         tk.Button(self.button_frame, text="Save Image", command=self.save_image).pack(side="left", padx=5)
 
         tk.Button(self.button_frame, text="Reset", command=self.reset_images).pack(side="left", padx=5)
+
+        tk.Label(self.button_frame, text="Kernel").pack(side="left")
+
+        self.kernel_slider = tk.Scale(
+            self.button_frame,
+            from_=3,
+            to=51,
+            resolution=2,      # only odd numbers
+            orient="horizontal",
+            length=150
+        )
+
+        self.kernel_slider.set(13)
+        self.kernel_slider.pack(side="left")
+
+        tk.Label(self.button_frame, text="Radius").pack(side="left")
+
+        self.radius_slider = tk.Scale(
+            self.button_frame,
+            from_=1,
+            to=25,
+            orient="horizontal",
+            length=120
+        )
+
+        self.radius_slider.set(9)
+        self.radius_slider.pack(side="left")
+
+        tk.Label(self.button_frame, text="Angle").pack(side="left")
+
+        self.angle_slider = tk.Scale(
+            self.button_frame,
+            from_=0,
+            to=180,
+            orient="horizontal",
+            length=150
+        )
+
+        self.angle_slider.set(135)
+        self.angle_slider.pack(side="left")
+
+        self.update_controls()
+
+    def update_controls(self, event=None):
+
+        if self.blur_type.get() == "Motion Blur":
+
+            self.radius_slider.config(state="disabled")
+            self.angle_slider.config(state="normal")
+
+        else:
+
+            self.radius_slider.config(state="normal")
+            self.angle_slider.config(state="disabled")
 
     def display_image(self, image, label, frame, side):
         frame.update_idletasks()
@@ -92,49 +161,53 @@ class ImageApp:
 
         sharpen = sharpen.astype(np.float32) / 255.0
 
-        #Choose a PSF (Point Spread Function) for deblurring
+        kernel_size = int(self.kernel_slider.get())
 
-        # # Create a circular PSF (defocus kernel)
-        # kernel_size = 27
-        # radius = 9
+        # Create PSF (Point Spread Function) based on the selected blur type
+        if kernel_size % 2 == 0:
+            kernel_size += 1
 
-        # psf = np.zeros((kernel_size, kernel_size), dtype=np.float32)
-        # cv2.circle(psf,
-        #         (kernel_size // 2, kernel_size // 2),
-        #         radius,
-        #         1,
-        #         -1)
-        # psf /= psf.sum()
-        # # (END) Create a circular PSF (defocus kernel)
+        if self.blur_type.get() == "Out of Focus":
 
-        # Create a linear PSF (motion blur kernel)
-        kernel_size = 13 #Must be odd
-        angle = 135      # degrees
-                        # 0°	Horizontal (left ↔ right)
-                        # 30°	Slightly upward to the right
-                        # 45°	Diagonal (bottom-left ↔ top-right)
-                        # 60°	Steeper diagonal
-                        # 90°	Vertical (up ↕ down)
-                        # 120°	Steep diagonal (top-left ↔ bottom-right)
-                        # 135°	Diagonal (top-left ↔ bottom-right)
-                        # 150°	Slightly downward to the right
-                        # 180°	Same as 0°
-        psf = np.zeros((kernel_size, kernel_size), dtype=np.float32)
-        cv2.line(
-            psf,
-            (0, kernel_size // 2),
-            (kernel_size - 1, kernel_size // 2),
-            1,
-            1
-        )
-        M = cv2.getRotationMatrix2D(
-            (kernel_size / 2, kernel_size / 2),
-            angle,
-            1
-        )
-        psf = cv2.warpAffine(psf, M, (kernel_size, kernel_size))
+            radius = self.radius_slider.get()
+
+            psf = np.zeros((kernel_size, kernel_size), dtype=np.float32)
+
+            cv2.circle(
+                psf,
+                (kernel_size // 2, kernel_size // 2),
+                radius,
+                1,
+                -1
+            )
+
+        else:
+
+            angle = self.angle_slider.get()
+
+            psf = np.zeros((kernel_size, kernel_size), dtype=np.float32)
+
+            cv2.line(
+                psf,
+                (0, kernel_size // 2),
+                (kernel_size - 1, kernel_size // 2),
+                1,
+                1
+            )
+
+            M = cv2.getRotationMatrix2D(
+                (kernel_size / 2, kernel_size / 2),
+                angle,
+                1
+            )
+
+            psf = cv2.warpAffine(
+                psf,
+                M,
+                (kernel_size, kernel_size)
+            )
+
         psf /= psf.sum()
-        # (END) Create a linear PSF (motion blur kernel)
 
         # Richardson-Lucy on each color channel
         result = np.zeros_like(sharpen)
